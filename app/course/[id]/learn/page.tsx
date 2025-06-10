@@ -10,74 +10,89 @@ import { Badge } from "@/components/ui/badge"
 import { Textarea } from "@/components/ui/textarea"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Label } from "@/components/ui/label"
+import { useQuery, useMutation } from "convex/react"
+import { api } from "../../../../_generated/api"
+import { Id } from "../../../../_generated/dataModel"
 
-// Mock lesson data
-const mockLessons = [
-  {
-    _id: "1",
-    title: "Introduction to React",
-    type: "video",
-    content: { videoUrl: "https://www.youtube.com/embed/dGcsHMXbSOA" },
-    completed: true,
-  },
-  {
-    _id: "2",
-    title: "JSX Fundamentals Quiz",
-    type: "quiz",
-    content: {
-      quizQuestions: [
-        {
-          question: "What does JSX stand for?",
-          options: ["JavaScript XML", "Java Syntax Extension", "JavaScript Extension", "Java XML"],
-          correctAnswer: 0,
-          explanation: "JSX stands for JavaScript XML, which allows you to write HTML-like syntax in JavaScript.",
-        },
-        {
-          question: "Which of the following is valid JSX?",
-          options: ["<div>Hello World</div>", "<div>Hello World", "div>Hello World</div>", "All of the above"],
-          correctAnswer: 0,
-          explanation: "JSX elements must be properly closed with matching opening and closing tags.",
-        },
-      ],
-    },
-    completed: false,
-  },
-  {
-    _id: "3",
-    title: "Build Your First Component",
-    type: "code",
-    content: {
-      codeTemplate: `import React from 'react';
-
-function Welcome(props) {
-  // Your code here
-  return (
-    <div>
-      
-    </div>
-  );
+// Define types
+interface Course {
+  _id: string;
+  title: string;
 }
 
-export default Welcome;`,
-      codeLanguage: "javascript",
-      expectedOutput: "A component that displays 'Hello, [name]!'",
-    },
-    completed: false,
-  },
-]
+interface QuizQuestion {
+  question: string;
+  options: string[];
+  correctAnswer: number;
+  explanation: string;
+}
+
+interface LessonContent {
+  videoUrl?: string;
+  quizQuestions?: QuizQuestion[];
+  codeTemplate?: string;
+  expectedOutput?: string;
+  codeLanguage?: string;
+}
+
+interface Lesson {
+  _id: string;
+  title: string;
+  description?: string;
+  type: "video" | "quiz" | "code" | "text";
+  content?: LessonContent;
+  duration?: number;
+  order: number;
+}
+
+interface UserProgress {
+  _id: string;
+  lessonId: string;
+  completed: boolean;
+  timeSpent?: number;
+  quizScore?: number;
+}
 
 export default function LearnPage({ params }: { params: { id: string } }) {
+  const courseId = params.id as Id<"courses">
+  
+  // GET REAL DATA FROM CONVEX BACKEND
+  const course = useQuery(api.courses.getCourse, { courseId }) as Course | undefined
+  const lessons = useQuery(api.lessons.getLessons, { courseId }) as Lesson[] | undefined
+  const userProgress = useQuery(api.progress.getUserCourseProgress, { courseId }) as UserProgress[] | undefined
+  
+  // MUTATIONS
+  const markLessonComplete = useMutation(api.lessons.markLessonComplete)
+  const submitQuizAnswer = useMutation(api.lessons.submitQuizAnswer)
+  const submitCodeExercise = useMutation(api.lessons.submitCodeExercise)
+  
   const [currentLessonIndex, setCurrentLessonIndex] = useState(0)
   const [quizAnswers, setQuizAnswers] = useState<{ [key: number]: number }>({})
   const [showQuizResults, setShowQuizResults] = useState(false)
   const [codeSubmission, setCodeSubmission] = useState("")
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
-  const currentLesson = mockLessons[currentLessonIndex]
-  const completedLessons = mockLessons.filter((lesson) => lesson.completed).length
-  const progressPercentage = (completedLessons / mockLessons.length) * 100
+  // LOADING STATE
+  if (!course || !lessons || lessons.length === 0) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-primary mx-auto mb-4"></div>
+          <p>Loading course content...</p>
+        </div>
+      </div>
+    )
+  }
+
+  const currentLesson = lessons[currentLessonIndex]
+  const completedLessons = lessons.filter((lesson) => {
+    const progress = (userProgress || []).find(p => p.lessonId === lesson._id)
+    return progress?.completed || false
+  }).length
+  const progressPercentage = (completedLessons / lessons.length) * 100
 
   const handleNextLesson = () => {
-    if (currentLessonIndex < mockLessons.length - 1) {
+    if (currentLessonIndex < lessons.length - 1) {
       setCurrentLessonIndex(currentLessonIndex + 1)
       setShowQuizResults(false)
       setQuizAnswers({})
@@ -94,45 +109,118 @@ export default function LearnPage({ params }: { params: { id: string } }) {
     }
   }
 
-  const handleQuizSubmit = () => {
-    setShowQuizResults(true)
-    // Mark lesson as completed
-    mockLessons[currentLessonIndex].completed = true
+  const handleMarkComplete = async (timeSpent: number = 300) => {
+    if (!currentLesson) return
+    
+    setIsSubmitting(true)
+    try {
+      await markLessonComplete({ 
+        lessonId: currentLesson._id as Id<"lessons">,
+        timeSpent,
+        quizScore: 100 // Default score for non-quiz lessons
+      })
+    } catch (error) {
+      console.error("Failed to mark lesson complete:", error)
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
-  const handleCodeSubmit = () => {
-    // Submit code and mark lesson as completed
-    mockLessons[currentLessonIndex].completed = true
-    alert("Code submitted successfully!")
+  const handleQuizSubmit = async () => {
+    if (!currentLesson?.content?.quizQuestions) return
+    
+    setIsSubmitting(true)
+    try {
+      const score = Object.entries(quizAnswers).filter(
+        ([qIndex, answer]) =>
+          answer === currentLesson.content!.quizQuestions![Number.parseInt(qIndex)].correctAnswer
+      ).length
+      
+      const totalQuestions = currentLesson.content.quizQuestions.length
+      const percentage = (score / totalQuestions) * 100
+      
+      await submitQuizAnswer({
+        lessonId: currentLesson._id as Id<"lessons">,
+        answers: quizAnswers,
+        score: percentage
+      })
+      
+      await markLessonComplete({
+        lessonId: currentLesson._id as Id<"lessons">,
+        timeSpent: 600, // 10 minutes for quiz
+        quizScore: percentage
+      })
+      
+      setShowQuizResults(true)
+    } catch (error) {
+      console.error("Failed to submit quiz:", error)
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  const handleCodeSubmit = async () => {
+    if (!currentLesson || !codeSubmission.trim()) return
+    
+    setIsSubmitting(true)
+    try {
+      await submitCodeExercise({
+        lessonId: currentLesson._id as Id<"lessons">,
+        code: codeSubmission
+      })
+      
+      await markLessonComplete({
+        lessonId: currentLesson._id as Id<"lessons">,
+        timeSpent: 1800, // 30 minutes for code exercise
+        quizScore: 100
+      })
+      
+      alert("Code submitted successfully!")
+    } catch (error) {
+      console.error("Failed to submit code:", error)
+      alert("Failed to submit code. Please try again.")
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   const renderLessonContent = () => {
+    if (!currentLesson) return <div>No lesson content available</div>
+
     switch (currentLesson.type) {
       case "video":
         return (
           <div className="space-y-4">
             <div className="aspect-video">
-              <iframe
-                src={currentLesson.content.videoUrl}
-                className="w-full h-full rounded-lg"
-                allowFullScreen
-                title={currentLesson.title}
-              />
+              {currentLesson.content?.videoUrl ? (
+                <iframe
+                  src={currentLesson.content.videoUrl}
+                  className="w-full h-full rounded-lg"
+                  allowFullScreen
+                  title={currentLesson.title}
+                />
+              ) : (
+                <div className="w-full h-full bg-muted rounded-lg flex items-center justify-center">
+                  <p className="text-muted-foreground">Video content not available</p>
+                </div>
+              )}
             </div>
             <div className="flex justify-center">
               <Button
-                onClick={() => {
-                  mockLessons[currentLessonIndex].completed = true
-                  handleNextLesson()
-                }}
+                onClick={() => handleMarkComplete()}
+                disabled={isSubmitting}
               >
-                Mark as Complete
+                {isSubmitting ? "Marking Complete..." : "Mark as Complete"}
               </Button>
             </div>
           </div>
         )
 
       case "quiz":
+        if (!currentLesson.content?.quizQuestions) {
+          return <div>Quiz content not available</div>
+        }
+
         return (
           <div className="space-y-6">
             {currentLesson.content.quizQuestions.map((question, qIndex) => (
@@ -175,10 +263,10 @@ export default function LearnPage({ params }: { params: { id: string } }) {
             {!showQuizResults ? (
               <Button
                 onClick={handleQuizSubmit}
-                disabled={Object.keys(quizAnswers).length < currentLesson.content.quizQuestions.length}
+                disabled={Object.keys(quizAnswers).length < currentLesson.content.quizQuestions.length || isSubmitting}
                 className="w-full"
               >
-                Submit Quiz
+                {isSubmitting ? "Submitting..." : "Submit Quiz"}
               </Button>
             ) : (
               <div className="text-center space-y-4">
@@ -187,7 +275,7 @@ export default function LearnPage({ params }: { params: { id: string } }) {
                   {
                     Object.entries(quizAnswers).filter(
                       ([qIndex, answer]) =>
-                        answer === currentLesson.content.quizQuestions[Number.parseInt(qIndex)].correctAnswer,
+                        answer === currentLesson.content!.quizQuestions![Number.parseInt(qIndex)].correctAnswer,
                     ).length
                   }{" "}
                   / {currentLesson.content.quizQuestions.length}
@@ -207,17 +295,25 @@ export default function LearnPage({ params }: { params: { id: string } }) {
               </CardHeader>
               <CardContent>
                 <p className="text-sm text-muted-foreground mb-4">
-                  Expected Output: {currentLesson.content.expectedOutput}
+                  Expected Output: {currentLesson.content?.expectedOutput || "Complete the exercise"}
                 </p>
                 <Textarea
-                  value={codeSubmission || currentLesson.content.codeTemplate}
+                  value={codeSubmission || currentLesson.content?.codeTemplate || ""}
                   onChange={(e) => setCodeSubmission(e.target.value)}
                   className="font-mono text-sm min-h-[300px]"
                   placeholder="Write your code here..."
                 />
                 <div className="flex gap-2 mt-4">
-                  <Button onClick={handleCodeSubmit}>Submit Code</Button>
-                  <Button variant="outline" onClick={() => setCodeSubmission(currentLesson.content.codeTemplate)}>
+                  <Button 
+                    onClick={handleCodeSubmit}
+                    disabled={!codeSubmission.trim() || isSubmitting}
+                  >
+                    {isSubmitting ? "Submitting..." : "Submit Code"}
+                  </Button>
+                  <Button 
+                    variant="outline" 
+                    onClick={() => setCodeSubmission(currentLesson.content?.codeTemplate || "")}
+                  >
                     Reset
                   </Button>
                 </div>
@@ -227,7 +323,24 @@ export default function LearnPage({ params }: { params: { id: string } }) {
         )
 
       default:
-        return <div>Lesson content not available</div>
+        return (
+          <div className="space-y-4">
+            <Card>
+              <CardContent className="p-6">
+                <div className="text-center">
+                  <FileText className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
+                  <h3 className="text-lg font-medium mb-2">{currentLesson.title}</h3>
+                  <p className="text-muted-foreground mb-4">
+                    {currentLesson.description || "Lesson content will be available soon."}
+                  </p>
+                  <Button onClick={() => handleMarkComplete()}>
+                    Mark as Complete
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )
     }
   }
 
@@ -244,6 +357,11 @@ export default function LearnPage({ params }: { params: { id: string } }) {
     }
   }
 
+  const isLessonCompleted = (lessonId: string) => {
+    const progress = (userProgress || []).find(p => p.lessonId === lessonId)
+    return progress?.completed || false
+  }
+
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
@@ -257,7 +375,7 @@ export default function LearnPage({ params }: { params: { id: string } }) {
                   Back to Course
                 </Button>
               </Link>
-              <h1 className="text-lg font-bold">Complete React Development Course</h1>
+              <h1 className="text-lg font-bold">{course.title}</h1>
             </div>
             <div className="flex items-center gap-4">
               <div className="text-sm text-muted-foreground">Progress: {Math.round(progressPercentage)}%</div>
@@ -273,7 +391,7 @@ export default function LearnPage({ params }: { params: { id: string } }) {
           <div className="p-4">
             <h2 className="font-semibold mb-4">Course Content</h2>
             <div className="space-y-2">
-              {mockLessons.map((lesson, index) => (
+              {lessons.map((lesson, index) => (
                 <button
                   key={lesson._id}
                   onClick={() => setCurrentLessonIndex(index)}
@@ -283,7 +401,7 @@ export default function LearnPage({ params }: { params: { id: string } }) {
                 >
                   <div className="flex items-center gap-3">
                     <div className="flex items-center justify-center w-6 h-6">
-                      {lesson.completed ? (
+                      {isLessonCompleted(lesson._id) ? (
                         <CheckCircle className="h-4 w-4 text-green-500" />
                       ) : (
                         getLessonIcon(lesson.type)
@@ -310,14 +428,14 @@ export default function LearnPage({ params }: { params: { id: string } }) {
             <div className="max-w-4xl mx-auto">
               <div className="flex items-center justify-between mb-6">
                 <div>
-                  <h1 className="text-2xl font-bold mb-2">{currentLesson.title}</h1>
+                  <h1 className="text-2xl font-bold mb-2">{currentLesson?.title}</h1>
                   <div className="flex items-center gap-2">
                     <Badge variant="outline">
-                      {getLessonIcon(currentLesson.type)}
-                      <span className="ml-1 capitalize">{currentLesson.type}</span>
+                      {getLessonIcon(currentLesson?.type || "text")}
+                      <span className="ml-1 capitalize">{currentLesson?.type}</span>
                     </Badge>
                     <span className="text-sm text-muted-foreground">
-                      Lesson {currentLessonIndex + 1} of {mockLessons.length}
+                      Lesson {currentLessonIndex + 1} of {lessons.length}
                     </span>
                   </div>
                 </div>
@@ -329,7 +447,7 @@ export default function LearnPage({ params }: { params: { id: string } }) {
                   <Button
                     variant="outline"
                     onClick={handleNextLesson}
-                    disabled={currentLessonIndex === mockLessons.length - 1}
+                    disabled={currentLessonIndex === lessons.length - 1}
                   >
                     Next
                     <ChevronRight className="h-4 w-4" />

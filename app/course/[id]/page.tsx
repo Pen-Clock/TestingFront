@@ -8,108 +8,113 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { useQuery, useMutation } from "convex/react"
+import { api } from "../../../_generated/api"
+import { Id } from "../../../_generated/dataModel"
 
-// Mock data - replace with actual API calls
-const mockCourse = {
-  _id: "1",
-  title: "Complete React Development Course",
-  description:
-    "Master React from basics to advanced concepts with hands-on projects. This comprehensive course covers everything from React fundamentals to advanced patterns, state management, and modern development practices.",
-  instructorName: "John Doe",
-  instructorBio: "Senior Frontend Developer with 8+ years of experience",
-  category: "Programming",
-  difficulty: "intermediate",
-  isPaid: true,
-  price: 99.99,
-  thumbnail: "/placeholder.svg?height=300&width=500",
-  rating: 4.8,
-  studentsCount: 1250,
-  estimatedDuration: 480,
-  tags: ["React", "JavaScript", "Frontend"],
-  isEnrolled: false,
-  progress: 0,
+// Define types
+interface Course {
+  _id: string;
+  title: string;
+  description: string;
+  instructorName?: string;
+  instructorBio?: string;
+  category: string;
+  difficulty: "beginner" | "intermediate" | "advanced";
+  isPaid: boolean;
+  price?: number;
+  thumbnail?: string;
+  rating?: number;
+  studentsCount?: number;
+  estimatedDuration: number;
+  tags?: string[];
 }
 
-const mockLessons = [
-  {
-    _id: "1",
-    title: "Introduction to React",
-    description: "Learn what React is and why it's popular",
-    type: "video",
-    duration: 15,
-    isPreview: true,
-    completed: false,
-    order: 1,
-  },
-  {
-    _id: "2",
-    title: "Setting up Development Environment",
-    description: "Install Node.js, npm, and create your first React app",
-    type: "video",
-    duration: 20,
-    isPreview: false,
-    completed: false,
-    order: 2,
-  },
-  {
-    _id: "3",
-    title: "JSX Fundamentals Quiz",
-    description: "Test your understanding of JSX syntax",
-    type: "quiz",
-    duration: 10,
-    isPreview: false,
-    completed: false,
-    order: 3,
-  },
-  {
-    _id: "4",
-    title: "Build Your First Component",
-    description: "Create a React component from scratch",
-    type: "code",
-    duration: 30,
-    isPreview: false,
-    completed: false,
-    order: 4,
-  },
-  {
-    _id: "5",
-    title: "Props and State",
-    description: "Understanding component props and state management",
-    type: "video",
-    duration: 25,
-    isPreview: false,
-    completed: false,
-    order: 5,
-  },
-]
+interface Lesson {
+  _id: string;
+  title: string;
+  description?: string;
+  type: "video" | "quiz" | "code" | "text";
+  duration?: number;
+  isPreview: boolean;
+  completed?: boolean;
+  order: number;
+}
 
-const mockReviews = [
-  {
-    _id: "1",
-    userName: "Alice Johnson",
-    rating: 5,
-    comment: "Excellent course! Very well structured and easy to follow.",
-    createdAt: Date.now() - 86400000,
-  },
-  {
-    _id: "2",
-    userName: "Bob Smith",
-    rating: 4,
-    comment: "Great content, but could use more practical exercises.",
-    createdAt: Date.now() - 172800000,
-  },
-]
+interface Review {
+  _id: string;
+  userName?: string;
+  rating: number;
+  comment: string;
+  createdAt?: number;
+}
+
+interface UserEnrollment {
+  _id: string;
+  courseId: string;
+  userId: string;
+  progress?: number;
+}
 
 export default function CoursePage({ params }: { params: { id: string } }) {
-  const [isEnrolled, setIsEnrolled] = useState(mockCourse.isEnrolled)
+  const courseId = params.id as Id<"courses">
+  
+  // GET REAL DATA FROM CONVEX BACKEND
+  const course = useQuery(api.courses.getCourse, { courseId }) as Course | undefined
+  const lessons = useQuery(api.lessons.getLessons, { courseId }) as Lesson[] | undefined
+  const reviews = useQuery(api.reviews.getCourseReviews, { courseId }) as Review[] | undefined
+  const userEnrollment = useQuery(api.courses.getUserEnrollment, { courseId }) as UserEnrollment | undefined
+  
+  // MUTATIONS
+  const enrollInCourse = useMutation(api.courses.enrollInCourse)
+  
+  const [isEnrolling, setIsEnrolling] = useState(false)
 
-  const handleEnroll = () => {
-    // Call API to enroll user
-    setIsEnrolled(true)
+  const handleEnroll = async () => {
+    if (!course) return
+    
+    setIsEnrolling(true)
+    try {
+      await enrollInCourse({ courseId })
+    } catch (error) {
+      console.error("Enrollment failed:", error)
+      alert("Enrollment failed. Please try again.")
+    } finally {
+      setIsEnrolling(false)
+    }
   }
 
-  const completedLessons = mockLessons.filter((lesson) => lesson.completed).length
-  const progressPercentage = (completedLessons / mockLessons.length) * 100
+  // LOADING STATES
+  if (course === undefined) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-primary mx-auto mb-4"></div>
+          <p>Loading course...</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (!course) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center">
+          <h1 className="text-2xl font-bold mb-4">Course Not Found</h1>
+          <p className="text-muted-foreground mb-4">The course you're looking for doesn't exist.</p>
+          <Link href="/">
+            <Button>Back to Courses</Button>
+          </Link>
+        </div>
+      </div>
+    )
+  }
+
+  // CALCULATE PROGRESS
+  const completedLessons = (lessons || []).filter((lesson) => lesson.completed).length
+  const totalLessons = (lessons || []).length
+  const progressPercentage = totalLessons > 0 ? (completedLessons / totalLessons) * 100 : 0
+  const isEnrolled = !!userEnrollment
 
   return (
     <div className="min-h-screen bg-background">
@@ -135,41 +140,41 @@ export default function CoursePage({ params }: { params: { id: string } }) {
             {/* Course Header */}
             <div className="mb-8">
               <div className="flex flex-wrap gap-2 mb-4">
-                <Badge variant="outline">{mockCourse.category}</Badge>
+                <Badge variant="outline">{course.category}</Badge>
                 <Badge variant="outline">
-                  {mockCourse.difficulty.charAt(0).toUpperCase() + mockCourse.difficulty.slice(1)}
+                  {course.difficulty.charAt(0).toUpperCase() + course.difficulty.slice(1)}
                 </Badge>
-                {mockCourse.tags.map((tag) => (
+                {(course.tags || []).map((tag) => (
                   <Badge key={tag} variant="secondary">
                     {tag}
                   </Badge>
                 ))}
               </div>
 
-              <h1 className="text-3xl font-bold mb-4">{mockCourse.title}</h1>
+              <h1 className="text-3xl font-bold mb-4">{course.title}</h1>
 
               <div className="flex items-center gap-6 text-sm text-muted-foreground mb-4">
                 <div className="flex items-center gap-1">
                   <Star className="h-4 w-4 fill-yellow-400 text-yellow-400" />
-                  <span>{mockCourse.rating}</span>
+                  <span>{course.rating || 0}</span>
                 </div>
                 <div className="flex items-center gap-1">
                   <Users className="h-4 w-4" />
-                  <span>{mockCourse.studentsCount.toLocaleString()} students</span>
+                  <span>{(course.studentsCount || 0).toLocaleString()} students</span>
                 </div>
                 <div className="flex items-center gap-1">
                   <Clock className="h-4 w-4" />
-                  <span>{Math.floor(mockCourse.estimatedDuration / 60)} hours</span>
+                  <span>{Math.floor(course.estimatedDuration / 60)} hours</span>
                 </div>
               </div>
 
-              <p className="text-muted-foreground mb-6">{mockCourse.description}</p>
+              <p className="text-muted-foreground mb-6">{course.description}</p>
 
               <div className="flex items-center gap-4 mb-6">
                 <span className="text-sm text-muted-foreground">Instructor:</span>
                 <div>
-                  <p className="font-medium">{mockCourse.instructorName}</p>
-                  <p className="text-sm text-muted-foreground">{mockCourse.instructorBio}</p>
+                  <p className="font-medium">{course.instructorName || "Unknown Instructor"}</p>
+                  <p className="text-sm text-muted-foreground">{course.instructorBio || "No bio available"}</p>
                 </div>
               </div>
             </div>
@@ -184,82 +189,102 @@ export default function CoursePage({ params }: { params: { id: string } }) {
 
               <TabsContent value="curriculum" className="space-y-4">
                 <div className="space-y-2">
-                  {mockLessons.map((lesson, index) => (
-                    <Card key={lesson._id} className="p-4">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <div className="flex items-center justify-center w-8 h-8 rounded-full bg-muted text-sm font-medium">
-                            {index + 1}
+                  {lessons === undefined ? (
+                    <div className="text-center py-8">
+                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
+                      <p className="text-muted-foreground">Loading lessons...</p>
+                    </div>
+                  ) : lessons.length === 0 ? (
+                    <div className="text-center py-8 text-muted-foreground">
+                      No lessons available yet.
+                    </div>
+                  ) : (
+                    lessons.map((lesson, index) => (
+                      <Card key={lesson._id} className="p-4">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <div className="flex items-center justify-center w-8 h-8 rounded-full bg-muted text-sm font-medium">
+                              {index + 1}
+                            </div>
+                            <div>
+                              <h4 className="font-medium">{lesson.title}</h4>
+                              <p className="text-sm text-muted-foreground">{lesson.description || "No description"}</p>
+                            </div>
                           </div>
-                          <div>
-                            <h4 className="font-medium">{lesson.title}</h4>
-                            <p className="text-sm text-muted-foreground">{lesson.description}</p>
+                          <div className="flex items-center gap-2">
+                            <Badge variant="outline" className="text-xs">
+                              {lesson.type}
+                            </Badge>
+                            <span className="text-sm text-muted-foreground">{lesson.duration || 0}min</span>
+                            {lesson.isPreview || isEnrolled ? (
+                              <Button size="sm" variant="ghost">
+                                <Play className="h-4 w-4" />
+                              </Button>
+                            ) : (
+                              <Lock className="h-4 w-4 text-muted-foreground" />
+                            )}
+                            {lesson.completed && <CheckCircle className="h-4 w-4 text-green-500" />}
                           </div>
                         </div>
-                        <div className="flex items-center gap-2">
-                          <Badge variant="outline" className="text-xs">
-                            {lesson.type}
-                          </Badge>
-                          <span className="text-sm text-muted-foreground">{lesson.duration}min</span>
-                          {lesson.isPreview || isEnrolled ? (
-                            <Button size="sm" variant="ghost">
-                              <Play className="h-4 w-4" />
-                            </Button>
-                          ) : (
-                            <Lock className="h-4 w-4 text-muted-foreground" />
-                          )}
-                          {lesson.completed && <CheckCircle className="h-4 w-4 text-green-500" />}
-                        </div>
-                      </div>
-                    </Card>
-                  ))}
+                      </Card>
+                    ))
+                  )}
                 </div>
               </TabsContent>
 
               <TabsContent value="reviews" className="space-y-4">
-                {mockReviews.map((review) => (
-                  <Card key={review._id} className="p-4">
-                    <div className="flex items-start gap-3">
-                      <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center">
-                        {review.userName.charAt(0)}
-                      </div>
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-2">
-                          <span className="font-medium">{review.userName}</span>
-                          <div className="flex">
-                            {[...Array(5)].map((_, i) => (
-                              <Star
-                                key={i}
-                                className={`h-4 w-4 ${
-                                  i < review.rating ? "fill-yellow-400 text-yellow-400" : "text-muted-foreground"
-                                }`}
-                              />
-                            ))}
-                          </div>
-                          <span className="text-sm text-muted-foreground">
-                            {new Date(review.createdAt).toLocaleDateString()}
-                          </span>
+                {reviews === undefined ? (
+                  <div className="text-center py-8">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
+                    <p className="text-muted-foreground">Loading reviews...</p>
+                  </div>
+                ) : reviews.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    No reviews yet. Be the first to review this course!
+                  </div>
+                ) : (
+                  reviews.map((review) => (
+                    <Card key={review._id} className="p-4">
+                      <div className="flex items-start gap-3">
+                        <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center">
+                          {(review.userName || "U").charAt(0)}
                         </div>
-                        <p className="text-sm">{review.comment}</p>
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-2">
+                            <span className="font-medium">{review.userName || "Anonymous"}</span>
+                            <div className="flex">
+                              {[...Array(5)].map((_, i) => (
+                                <Star
+                                  key={i}
+                                  className={`h-4 w-4 ${
+                                    i < review.rating ? "fill-yellow-400 text-yellow-400" : "text-muted-foreground"
+                                  }`}
+                                />
+                              ))}
+                            </div>
+                            <span className="text-sm text-muted-foreground">
+                              {review.createdAt ? new Date(review.createdAt).toLocaleDateString() : ""}
+                            </span>
+                          </div>
+                          <p className="text-sm">{review.comment}</p>
+                        </div>
                       </div>
-                    </div>
-                  </Card>
-                ))}
+                    </Card>
+                  ))
+                )}
               </TabsContent>
 
               <TabsContent value="instructor">
                 <Card className="p-6">
                   <div className="flex items-start gap-4">
                     <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center text-xl font-bold">
-                      {mockCourse.instructorName.charAt(0)}
+                      {(course.instructorName || "I").charAt(0)}
                     </div>
                     <div>
-                      <h3 className="text-xl font-bold mb-2">{mockCourse.instructorName}</h3>
-                      <p className="text-muted-foreground mb-4">{mockCourse.instructorBio}</p>
+                      <h3 className="text-xl font-bold mb-2">{course.instructorName || "Unknown Instructor"}</h3>
+                      <p className="text-muted-foreground mb-4">{course.instructorBio || "No bio available"}</p>
                       <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                        <span>5 Courses</span>
-                        <span>12,500 Students</span>
-                        <span>4.8 Rating</span>
+                        <span>Instructor</span>
                       </div>
                     </div>
                   </div>
@@ -274,8 +299,8 @@ export default function CoursePage({ params }: { params: { id: string } }) {
             <Card>
               <div className="relative">
                 <img
-                  src={mockCourse.thumbnail || "/placeholder.svg"}
-                  alt={mockCourse.title}
+                  src={course.thumbnail || "/placeholder.svg"}
+                  alt={course.title}
                   className="w-full h-48 object-cover rounded-t-lg"
                 />
                 <div className="absolute inset-0 flex items-center justify-center">
@@ -287,9 +312,9 @@ export default function CoursePage({ params }: { params: { id: string } }) {
 
               <CardContent className="p-6">
                 <div className="text-center mb-4">
-                  {mockCourse.isPaid ? (
+                  {course.isPaid ? (
                     <div>
-                      <span className="text-3xl font-bold">${mockCourse.price}</span>
+                      <span className="text-3xl font-bold">${course.price || 0}</span>
                       <p className="text-sm text-muted-foreground">One-time payment</p>
                     </div>
                   ) : (
@@ -309,13 +334,22 @@ export default function CoursePage({ params }: { params: { id: string } }) {
                       </div>
                       <Progress value={progressPercentage} />
                     </div>
-                    <Link href={`/course/${mockCourse._id}/learn`}>
+                    <Link href={`/course/${course._id}/learn`}>
                       <Button className="w-full">Continue Learning</Button>
                     </Link>
                   </div>
                 ) : (
-                  <Button className="w-full" onClick={handleEnroll}>
-                    {mockCourse.isPaid ? "Enroll Now" : "Start Learning"}
+                  <Button 
+                    className="w-full" 
+                    onClick={handleEnroll}
+                    disabled={isEnrolling}
+                  >
+                    {isEnrolling 
+                      ? "Enrolling..." 
+                      : course.isPaid 
+                        ? "Enroll Now" 
+                        : "Start Learning"
+                    }
                   </Button>
                 )}
               </CardContent>
@@ -329,11 +363,11 @@ export default function CoursePage({ params }: { params: { id: string } }) {
               <CardContent className="space-y-3">
                 <div className="flex items-center gap-2">
                   <Clock className="h-4 w-4" />
-                  <span className="text-sm">{Math.floor(mockCourse.estimatedDuration / 60)} hours of content</span>
+                  <span className="text-sm">{Math.floor(course.estimatedDuration / 60)} hours of content</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <Play className="h-4 w-4" />
-                  <span className="text-sm">{mockLessons.length} lessons</span>
+                  <span className="text-sm">{totalLessons} lessons</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <CheckCircle className="h-4 w-4" />

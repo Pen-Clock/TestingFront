@@ -9,59 +9,85 @@ import { Progress } from "@/components/ui/progress"
 import { Badge } from "@/components/ui/badge"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { useQuery } from "convex/react"
+import { api } from "../../_generated/api"
 
-// Mock data for enrolled courses
-const mockEnrolledCourses = [
-  {
-    _id: "1",
-    title: "Complete React Development Course",
-    thumbnail: "/placeholder.svg?height=200&width=300",
-    progress: 65,
-    totalLessons: 24,
-    completedLessons: 16,
-    lastAccessed: "2 hours ago",
-    nextLesson: "State Management with Redux",
-  },
-  {
-    _id: "2",
-    title: "Introduction to Python Programming",
-    thumbnail: "/placeholder.svg?height=200&width=300",
-    progress: 30,
-    totalLessons: 18,
-    completedLessons: 5,
-    lastAccessed: "1 day ago",
-    nextLesson: "Functions and Modules",
-  },
-  {
-    _id: "3",
-    title: "Web Design Fundamentals",
-    thumbnail: "/placeholder.svg?height=200&width=300",
-    progress: 100,
-    totalLessons: 12,
-    completedLessons: 12,
-    lastAccessed: "3 days ago",
-    nextLesson: "Course Completed!",
-  },
-]
+// Define types
+interface EnrolledCourse {
+  _id: string;
+  title: string;
+  thumbnail?: string;
+  progress?: number;
+  totalLessons?: number;
+  completedLessons?: number;
+  lastAccessed?: string;
+  nextLesson?: string;
+}
 
-// Mock achievements
-const mockAchievements = [
-  { title: "First Course Completed", description: "Completed your first course", earned: true },
-  { title: "Quick Learner", description: "Completed 5 lessons in one day", earned: true },
-  { title: "Consistent Learner", description: "Learned for 7 days straight", earned: false },
-  { title: "Code Master", description: "Completed 10 coding exercises", earned: false },
-]
+interface UserStats {
+  totalCoursesEnrolled: number;
+  totalLessonsCompleted: number;
+  totalTimeSpent: number;
+  currentStreak: number;
+}
 
-// Mock learning stats
-const mockStats = {
-  totalCoursesEnrolled: 3,
-  totalLessonsCompleted: 33,
-  totalTimeSpent: 1250, // in minutes
-  currentStreak: 5,
+interface Achievement {
+  title: string;
+  description: string;
+  earned: boolean;
 }
 
 export default function DashboardPage() {
   const [activeTab, setActiveTab] = useState("overview")
+
+  // GET REAL DATA FROM CONVEX BACKEND
+  const enrolledCourses = useQuery(api.courses.getUserEnrolledCourses, {}) as EnrolledCourse[] | undefined
+  const userProgress = useQuery(api.progress.getUserProgress, {}) as any[] | undefined
+  const userStats = useQuery(api.users.getUserStats, {}) as UserStats | undefined
+
+  // Default stats if not loaded
+  const stats: UserStats = userStats || {
+    totalCoursesEnrolled: 0,
+    totalLessonsCompleted: 0,
+    totalTimeSpent: 0,
+    currentStreak: 0
+  }
+
+  // CALCULATE ACHIEVEMENTS
+  const achievements: Achievement[] = [
+    { 
+      title: "First Course Completed", 
+      description: "Completed your first course", 
+      earned: (enrolledCourses || []).some(course => (course.progress || 0) >= 100)
+    },
+    { 
+      title: "Quick Learner", 
+      description: "Completed 5 lessons in one day", 
+      earned: stats.totalLessonsCompleted >= 5
+    },
+    { 
+      title: "Consistent Learner", 
+      description: "Learned for 7 days straight", 
+      earned: stats.currentStreak >= 7
+    },
+    { 
+      title: "Code Master", 
+      description: "Completed 10 coding exercises", 
+      earned: stats.totalLessonsCompleted >= 10
+    },
+  ]
+
+  // LOADING STATE
+  if (enrolledCourses === undefined) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-primary mx-auto mb-4"></div>
+          <p>Loading dashboard...</p>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="min-h-screen bg-background">
@@ -93,7 +119,7 @@ export default function DashboardPage() {
       <div className="container mx-auto px-4 py-8">
         {/* Welcome Section */}
         <div className="mb-8">
-          <h1 className="text-3xl font-bold mb-2">Welcome back, John!</h1>
+          <h1 className="text-3xl font-bold mb-2">Welcome back!</h1>
           <p className="text-muted-foreground">Continue your learning journey</p>
         </div>
 
@@ -105,7 +131,7 @@ export default function DashboardPage() {
               <BookOpen className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{mockStats.totalCoursesEnrolled}</div>
+              <div className="text-2xl font-bold">{stats.totalCoursesEnrolled}</div>
             </CardContent>
           </Card>
 
@@ -115,7 +141,7 @@ export default function DashboardPage() {
               <Trophy className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{mockStats.totalLessonsCompleted}</div>
+              <div className="text-2xl font-bold">{stats.totalLessonsCompleted}</div>
             </CardContent>
           </Card>
 
@@ -125,8 +151,8 @@ export default function DashboardPage() {
               <Clock className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{Math.floor(mockStats.totalTimeSpent / 60)}h</div>
-              <p className="text-xs text-muted-foreground">{mockStats.totalTimeSpent % 60}m total</p>
+              <div className="text-2xl font-bold">{Math.floor(stats.totalTimeSpent / 60)}h</div>
+              <p className="text-xs text-muted-foreground">{stats.totalTimeSpent % 60}m total</p>
             </CardContent>
           </Card>
 
@@ -136,7 +162,7 @@ export default function DashboardPage() {
               <TrendingUp className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{mockStats.currentStreak}</div>
+              <div className="text-2xl font-bold">{stats.currentStreak}</div>
               <p className="text-xs text-muted-foreground">days</p>
             </CardContent>
           </Card>
@@ -155,8 +181,8 @@ export default function DashboardPage() {
             <div>
               <h2 className="text-xl font-bold mb-4">Continue Learning</h2>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {mockEnrolledCourses
-                  .filter((course) => course.progress < 100)
+                {enrolledCourses
+                  .filter((course) => (course.progress || 0) < 100)
                   .slice(0, 3)
                   .map((course) => (
                     <Card key={course._id} className="overflow-hidden">
@@ -178,16 +204,16 @@ export default function DashboardPage() {
                         <div className="space-y-2">
                           <div className="flex justify-between text-sm">
                             <span>Progress</span>
-                            <span>{course.progress}%</span>
+                            <span>{course.progress || 0}%</span>
                           </div>
-                          <Progress value={course.progress} />
+                          <Progress value={course.progress || 0} />
                           <div className="flex justify-between text-sm text-muted-foreground">
                             <span>
-                              {course.completedLessons}/{course.totalLessons} lessons
+                              {course.completedLessons || 0}/{course.totalLessons || 0} lessons
                             </span>
-                            <span>{course.lastAccessed}</span>
+                            <span>{course.lastAccessed || "Never"}</span>
                           </div>
-                          <p className="text-sm text-muted-foreground">Next: {course.nextLesson}</p>
+                          <p className="text-sm text-muted-foreground">Next: {course.nextLesson || "Start learning"}</p>
                         </div>
                         <Link href={`/course/${course._id}/learn`}>
                           <Button className="w-full mt-4">Continue Learning</Button>
@@ -196,13 +222,18 @@ export default function DashboardPage() {
                     </Card>
                   ))}
               </div>
+              {enrolledCourses.filter(course => (course.progress || 0) < 100).length === 0 && (
+                <div className="text-center py-8 text-muted-foreground">
+                  <p>No courses in progress. <Link href="/" className="text-primary hover:underline">Browse courses</Link> to get started!</p>
+                </div>
+              )}
             </div>
 
             {/* Recent Achievements */}
             <div>
               <h2 className="text-xl font-bold mb-4">Recent Achievements</h2>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {mockAchievements
+                {achievements
                   .filter((achievement) => achievement.earned)
                   .map((achievement, index) => (
                     <Card key={index}>
@@ -218,6 +249,11 @@ export default function DashboardPage() {
                     </Card>
                   ))}
               </div>
+              {achievements.filter(achievement => achievement.earned).length === 0 && (
+                <div className="text-center py-8 text-muted-foreground">
+                  <p>No achievements yet. Keep learning to unlock your first achievement!</p>
+                </div>
+              )}
             </div>
           </TabsContent>
 
@@ -230,7 +266,7 @@ export default function DashboardPage() {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {mockEnrolledCourses.map((course) => (
+              {enrolledCourses.map((course) => (
                 <Card key={course._id} className="overflow-hidden">
                   <div className="relative">
                     <img
@@ -239,10 +275,10 @@ export default function DashboardPage() {
                       className="w-full h-40 object-cover"
                     />
                     <div className="absolute top-2 right-2">
-                      {course.progress === 100 ? (
+                      {(course.progress || 0) >= 100 ? (
                         <Badge className="bg-green-100 text-green-800">Completed</Badge>
                       ) : (
-                        <Badge variant="secondary">{course.progress}% Complete</Badge>
+                        <Badge variant="secondary">{course.progress || 0}% Complete</Badge>
                       )}
                     </div>
                   </div>
@@ -253,22 +289,22 @@ export default function DashboardPage() {
                       <div>
                         <div className="flex justify-between text-sm mb-1">
                           <span>Progress</span>
-                          <span>{course.progress}%</span>
+                          <span>{course.progress || 0}%</span>
                         </div>
-                        <Progress value={course.progress} />
+                        <Progress value={course.progress || 0} />
                       </div>
 
                       <div className="flex justify-between text-sm text-muted-foreground">
                         <span>
-                          {course.completedLessons}/{course.totalLessons} lessons
+                          {course.completedLessons || 0}/{course.totalLessons || 0} lessons
                         </span>
-                        <span>{course.lastAccessed}</span>
+                        <span>{course.lastAccessed || "Never"}</span>
                       </div>
 
                       <div className="flex gap-2">
                         <Link href={`/course/${course._id}/learn`} className="flex-1">
                           <Button className="w-full" size="sm">
-                            {course.progress === 100 ? "Review" : "Continue"}
+                            {(course.progress || 0) >= 100 ? "Review" : "Continue"}
                           </Button>
                         </Link>
                         <DropdownMenu>
@@ -278,7 +314,9 @@ export default function DashboardPage() {
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent>
-                            <DropdownMenuItem>View Details</DropdownMenuItem>
+                            <DropdownMenuItem>
+                              <Link href={`/course/${course._id}`}>View Details</Link>
+                            </DropdownMenuItem>
                             <DropdownMenuItem>Download Certificate</DropdownMenuItem>
                             <DropdownMenuItem>Leave Review</DropdownMenuItem>
                           </DropdownMenuContent>
@@ -289,13 +327,18 @@ export default function DashboardPage() {
                 </Card>
               ))}
             </div>
+            {enrolledCourses.length === 0 && (
+              <div className="text-center py-8 text-muted-foreground">
+                <p>You haven't enrolled in any courses yet. <Link href="/" className="text-primary hover:underline">Browse courses</Link> to get started!</p>
+              </div>
+            )}
           </TabsContent>
 
           <TabsContent value="achievements" className="space-y-6">
             <h2 className="text-xl font-bold">Achievements</h2>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {mockAchievements.map((achievement, index) => (
+              {achievements.map((achievement, index) => (
                 <Card key={index} className={achievement.earned ? "border-yellow-200" : "opacity-60"}>
                   <CardContent className="flex items-center gap-4 p-6">
                     <div

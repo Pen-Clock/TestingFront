@@ -8,70 +8,25 @@ import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { useQuery } from "convex/react"
+import { api } from "../_generated/api"
 
-// Mock data - replace with actual API calls
-const mockCourses = [
-  {
-    _id: "1",
-    title: "Complete React Development Course",
-    description: "Master React from basics to advanced concepts with hands-on projects",
-    instructorName: "John Doe",
-    category: "Programming",
-    difficulty: "intermediate",
-    isPaid: true,
-    price: 99.99,
-    thumbnail: "/placeholder.svg?height=200&width=300",
-    rating: 4.8,
-    studentsCount: 1250,
-    estimatedDuration: 480,
-    tags: ["React", "JavaScript", "Frontend"],
-  },
-  {
-    _id: "2",
-    title: "Introduction to Python Programming",
-    description: "Learn Python programming from scratch with practical examples",
-    instructorName: "Jane Smith",
-    category: "Programming",
-    difficulty: "beginner",
-    isPaid: false,
-    price: 0,
-    thumbnail: "/placeholder.svg?height=200&width=300",
-    rating: 4.6,
-    studentsCount: 2100,
-    estimatedDuration: 360,
-    tags: ["Python", "Programming", "Beginner"],
-  },
-  {
-    _id: "3",
-    title: "Advanced Machine Learning",
-    description: "Deep dive into machine learning algorithms and neural networks",
-    instructorName: "Dr. Alex Johnson",
-    category: "Data Science",
-    difficulty: "advanced",
-    isPaid: true,
-    price: 149.99,
-    thumbnail: "/placeholder.svg?height=200&width=300",
-    rating: 4.9,
-    studentsCount: 850,
-    estimatedDuration: 720,
-    tags: ["Machine Learning", "AI", "Python"],
-  },
-  {
-    _id: "4",
-    title: "Web Design Fundamentals",
-    description: "Learn the basics of web design and user experience",
-    instructorName: "Sarah Wilson",
-    category: "Design",
-    difficulty: "beginner",
-    isPaid: false,
-    price: 0,
-    thumbnail: "/placeholder.svg?height=200&width=300",
-    rating: 4.5,
-    studentsCount: 1800,
-    estimatedDuration: 240,
-    tags: ["Design", "UX", "CSS"],
-  },
-]
+// Define types for course data
+interface Course {
+  _id: string;
+  title: string;
+  description: string;
+  instructorName?: string;
+  category: string;
+  difficulty: "beginner" | "intermediate" | "advanced";
+  isPaid: boolean;
+  price?: number;
+  thumbnail?: string;
+  rating?: number;
+  studentsCount?: number;
+  estimatedDuration: number;
+  tags?: string[];
+}
 
 const categories = ["All", "Programming", "Data Science", "Design", "Business", "Marketing"]
 const difficulties = ["All", "beginner", "intermediate", "advanced"]
@@ -81,7 +36,10 @@ export default function HomePage() {
   const [selectedCategory, setSelectedCategory] = useState("All")
   const [selectedDifficulty, setSelectedDifficulty] = useState("All")
 
-  const filteredCourses = mockCourses.filter((course) => {
+  // Get real courses from Convex backend
+  const allCourses = useQuery(api.courses.getCourses, {}) as Course[] | undefined
+
+  const filteredCourses = (allCourses || []).filter((course) => {
     const matchesSearch =
       course.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
       course.description.toLowerCase().includes(searchTerm.toLowerCase())
@@ -90,6 +48,18 @@ export default function HomePage() {
 
     return matchesSearch && matchesCategory && matchesDifficulty
   })
+
+  // Loading state
+  if (allCourses === undefined) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-primary mx-auto mb-4"></div>
+          <p>Loading courses...</p>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="min-h-screen bg-background">
@@ -188,7 +158,7 @@ export default function HomePage() {
                   <div className="absolute top-2 right-2">
                     {course.isPaid ? (
                       <Badge variant="secondary" className="bg-green-100 text-green-800">
-                        ${course.price}
+                        ${course.price || 0}
                       </Badge>
                     ) : (
                       <Badge variant="secondary" className="bg-blue-100 text-blue-800">
@@ -205,7 +175,7 @@ export default function HomePage() {
 
                 <CardHeader className="pb-2">
                   <CardTitle className="text-lg line-clamp-2">{course.title}</CardTitle>
-                  <p className="text-sm text-muted-foreground">{course.instructorName}</p>
+                  <p className="text-sm text-muted-foreground">{course.instructorName || "Unknown Instructor"}</p>
                 </CardHeader>
 
                 <CardContent className="pb-2">
@@ -214,11 +184,11 @@ export default function HomePage() {
                   <div className="flex items-center gap-4 text-sm text-muted-foreground mb-3">
                     <div className="flex items-center gap-1">
                       <Star className="h-4 w-4 fill-yellow-400 text-yellow-400" />
-                      <span>{course.rating}</span>
+                      <span>{course.rating || 0}</span>
                     </div>
                     <div className="flex items-center gap-1">
                       <Users className="h-4 w-4" />
-                      <span>{course.studentsCount.toLocaleString()}</span>
+                      <span>{(course.studentsCount || 0).toLocaleString()}</span>
                     </div>
                     <div className="flex items-center gap-1">
                       <Clock className="h-4 w-4" />
@@ -227,7 +197,7 @@ export default function HomePage() {
                   </div>
 
                   <div className="flex flex-wrap gap-1">
-                    {course.tags.slice(0, 3).map((tag) => (
+                    {(course.tags || []).slice(0, 3).map((tag) => (
                       <Badge key={tag} variant="outline" className="text-xs">
                         {tag}
                       </Badge>
@@ -255,6 +225,13 @@ export default function HomePage() {
               </Card>
             ))}
           </div>
+
+          {filteredCourses.length === 0 && (
+            <div className="text-center py-12">
+              <p className="text-muted-foreground text-lg">No courses found matching your criteria.</p>
+              <p className="text-muted-foreground">Try adjusting your search or filters.</p>
+            </div>
+          )}
         </div>
       </section>
     </div>
